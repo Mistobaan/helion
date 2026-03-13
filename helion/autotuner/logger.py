@@ -558,8 +558,9 @@ def capture_output() -> Iterator[list[str]]:
         # Jupyter/IPython streams may not expose fileno(); fall back to
         # Python-level capture so compilation can proceed in notebooks.
         capture_stream = io.StringIO()
-        with contextlib.redirect_stdout(capture_stream), contextlib.redirect_stderr(
-            capture_stream
+        with (
+            contextlib.redirect_stdout(capture_stream),
+            contextlib.redirect_stderr(capture_stream),
         ):
             yield result
         result[0] = capture_stream.getvalue()

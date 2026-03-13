@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 from contextlib import contextmanager
 from contextlib import nullcontext
-import io
 import csv
+import io
 from itertools import count
 import logging
 import math
@@ -240,14 +241,13 @@ class TestAutotunerNotebookCompatibility(TestCase):
         fake_stdout = _NoFilenoStream()
         fake_stderr = _NoFilenoStream()
 
-        with (
-            patch("sys.stdout", fake_stdout),
-            patch("sys.stderr", fake_stderr),
-            patch("sys.__stdout__", fake_stdout),
-            patch("sys.__stderr__", fake_stderr),
-        ):
-            with capture_output() as output:
-                print("hello from notebook-like stream")
+        with ExitStack() as stack:
+            stack.enter_context(patch("sys.stdout", fake_stdout))
+            stack.enter_context(patch("sys.stderr", fake_stderr))
+            stack.enter_context(patch("sys.__stdout__", fake_stdout))
+            stack.enter_context(patch("sys.__stderr__", fake_stderr))
+            output = stack.enter_context(capture_output())
+            print("hello from notebook-like stream")
 
         self.assertIn("hello from notebook-like stream", output[0])
 
