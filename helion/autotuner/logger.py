@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import csv
 import hashlib
+import io
 import itertools
 import logging
 import math
@@ -29,7 +30,6 @@ from torch._inductor.runtime.triton_compat import PTXASError
 
 if TYPE_CHECKING:
     from _csv import _writer as CsvWriter
-    import io
 
     from ..runtime.config import Config
     from ..runtime.settings import Settings
@@ -520,6 +520,14 @@ def _stable_hash(content: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
+def _safe_fileno(stream: io.TextIOBase | object) -> int | None:
+    """Return ``stream.fileno()`` when supported, otherwise ``None``."""
+    try:
+        return stream.fileno()
+    except (AttributeError, io.UnsupportedOperation, OSError, ValueError):
+        return None
+
+
 @contextlib.contextmanager
 def capture_output() -> Iterator[list[str]]:
     """
@@ -538,8 +546,25 @@ def capture_output() -> Iterator[list[str]]:
     sys.stdout.flush()
     sys.stderr.flush()
 
-    stdout_fd = sys.stdout.fileno()
-    stderr_fd = sys.stderr.fileno()
+    stdout_fd = _safe_fileno(sys.stdout)
+    stderr_fd = _safe_fileno(sys.stderr)
+
+    if stdout_fd is None:
+        stdout_fd = _safe_fileno(sys.__stdout__)
+    if stderr_fd is None:
+        stderr_fd = _safe_fileno(sys.__stderr__)
+
+    if stdout_fd is None or stderr_fd is None:
+        # Jupyter/IPython streams may not expose fileno(); fall back to
+        # Python-level capture so compilation can proceed in notebooks.
+        capture_stream = io.StringIO()
+        with contextlib.redirect_stdout(capture_stream), contextlib.redirect_stderr(
+            capture_stream
+        ):
+            yield result
+        result[0] = capture_stream.getvalue()
+        return
+
     saved_stdout_fd = os.dup(stdout_fd)
     saved_stderr_fd = os.dup(stderr_fd)
     tmp_fd, tmp_path = tempfile.mkstemp()
